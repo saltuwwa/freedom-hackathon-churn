@@ -1,0 +1,12 @@
+psycopg2-binary
+pandas
+numpy
+scikit-learn
+catboost
+shap
+matplotlib
+seaborn
+plotly
+streamlit
+sqlalchemy
+joblib
