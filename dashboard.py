@@ -63,6 +63,39 @@ def load_metrics():
         return pd.read_csv(path).iloc[0]
     return None
 
+@st.cache_data(ttl=300)
+def build_live_segments(scored_df, churn_threshold, pltv_percentile):
+    """
+    Fast vectorized segmentation for interactive sliders.
+    """
+    df = scored_df.copy()
+    pltv_thresh_val = df['pltv_predicted'].quantile(pltv_percentile / 100)
+
+    sleeping = (
+        (df.get('error_evt_rate', 0) > 0.30) &
+        (df.get('failed_tx_rate', 0) > 0.30) &
+        (df['churn_prob'] > churn_threshold)
+    )
+    high_churn = df['churn_prob'] >= churn_threshold
+    high_value = df['pltv_predicted'] >= pltv_thresh_val
+
+    df['segment_live'] = np.select(
+        [
+            sleeping,
+            high_churn & high_value,
+            high_churn & ~high_value,
+            ~high_churn & high_value,
+        ],
+        [
+            'Sleeping Dogs',
+            'Persuadables',
+            'Lost Causes',
+            'Sure Things',
+        ],
+        default='Low Value Stable'
+    )
+    return df, pltv_thresh_val
+
 @st.cache_data(ttl=300, show_spinner="Загрузка EDA из PostgreSQL...")
 def load_eda():
     conn = psycopg2.connect(**DB_PARAMS)
@@ -97,25 +130,7 @@ metrics = load_metrics()
 
 # ── Re-segment with slider values ────────────────────────────────────────
 if scored is not None:
-    pltv_thresh_val = scored['pltv_predicted'].quantile(pltv_pct / 100)
-
-    def reassign(row):
-        sleeping = (
-            row.get('error_evt_rate', 0) > 0.30 and
-            row.get('failed_tx_rate', 0) > 0.30 and
-            row['churn_prob'] > churn_thresh
-        )
-        if sleeping:
-            return 'Sleeping Dogs'
-        if row['churn_prob'] >= churn_thresh and row['pltv_predicted'] >= pltv_thresh_val:
-            return 'Persuadables'
-        if row['churn_prob'] >= churn_thresh and row['pltv_predicted'] < pltv_thresh_val:
-            return 'Lost Causes'
-        if row['churn_prob'] < churn_thresh and row['pltv_predicted'] >= pltv_thresh_val:
-            return 'Sure Things'
-        return 'Low Value Stable'
-
-    scored['segment_live'] = scored.apply(reassign, axis=1)
+    scored, pltv_thresh_val = build_live_segments(scored, churn_thresh, pltv_pct)
 
 # ══════════════════════════════════════════════════════════════════════════
 # PAGE: ОБЗОР СЕГМЕНТОВ
@@ -161,8 +176,7 @@ if page == "Обзор сегментов":
     col1, col2 = st.columns([3, 2])
 
     with col1:
-        sample = scored.sample(min(10000, len(scored)), random_state=42).copy()
-        sample['segment_live'] = sample.apply(reassign, axis=1)
+        sample = scored.sample(min(5000, len(scored)), random_state=42).copy()
 
         fig = px.scatter(
             sample,
@@ -380,8 +394,7 @@ elif page == "Топ пользователи":
         .style.format({
             'churn_prob': '{:.2%}', 'pltv_predicted': '{:.1f}',
             'error_evt_rate': '{:.2%}'
-        }).background_gradient(subset=['churn_prob'], cmap='Reds')
-          .background_gradient(subset=['pltv_predicted'], cmap='Greens'),
+        }),
         use_container_width=True,
         height=600,
     )
