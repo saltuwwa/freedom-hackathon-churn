@@ -1,1 +1,9 @@
-__pycache__/echo *.pycecho catboost_info/echo outputs/echo .envecho .venv/
+__pycache__/
+*.pyc
+catboost_info/
+.env
+.venv/
+
+# Large generated artifacts (regenerate via churn_pipeline.py)
+outputs/users_scored.csv
+outputs/catboost_churn.cbm

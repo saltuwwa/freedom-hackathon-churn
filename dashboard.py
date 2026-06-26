@@ -115,13 +115,26 @@ def load_eda():
         "SELECT age, gender, city FROM users WHERE age BETWEEN 14 AND 75",
         conn
     )
-    # Channel ROMI (already computed)
-    romi = pd.read_sql("SELECT * FROM channel_romi ORDER BY romi_pct DESC", conn)
+    # Channel ROMI (schema may differ between environments)
+    romi = pd.read_sql("SELECT * FROM channel_romi", conn)
+    if 'romi_pct' not in romi.columns:
+        if {'avg_pltv', 'cac_kzt'}.issubset(set(romi.columns)):
+            # Fallback formula if raw columns are present.
+            romi['romi_pct'] = np.where(
+                romi['cac_kzt'].fillna(0) > 0,
+                ((romi['avg_pltv'].fillna(0) - romi['cac_kzt'].fillna(0)) / romi['cac_kzt'].replace(0, np.nan)) * 100,
+                np.nan
+            )
+        else:
+            # Last-resort fallback to keep EDA page alive
+            romi['romi_pct'] = np.nan
     # Products
     prods = pd.read_sql(
         "SELECT product_type, COUNT(*) as cnt FROM products GROUP BY product_type ORDER BY cnt DESC",
         conn
     )
+    if 'romi_pct' in romi.columns:
+        romi = romi.sort_values('romi_pct', ascending=False, na_position='last')
     conn.close()
     return tx_cat, evt_type, users, romi, prods
 
@@ -316,13 +329,26 @@ elif page == "Анализ данных (EDA)":
         st.plotly_chart(fig, use_container_width=True)
 
     st.subheader("Channel ROMI — детали")
-    st.dataframe(
-        romi_clean[['channel','users','avg_pltv','cac_kzt','romi_pct','net_value_per_user']]
-        .sort_values('romi_pct', ascending=False)
-        .style.format({'avg_pltv': '{:.1f}', 'romi_pct': '{:.0f}%',
-                       'net_value_per_user': '{:.0f}', 'users': '{:,}'}),
-        use_container_width=True
-    )
+    details_cols = [
+        c for c in ['channel', 'users', 'avg_pltv', 'cac_kzt', 'romi_pct', 'net_value_per_user']
+        if c in romi_clean.columns
+    ]
+    sort_col = 'romi_pct' if 'romi_pct' in romi_clean.columns else ('avg_pltv' if 'avg_pltv' in romi_clean.columns else None)
+    details_df = romi_clean[details_cols].copy()
+    if sort_col is not None:
+        details_df = details_df.sort_values(sort_col, ascending=False, na_position='last')
+
+    fmt = {}
+    if 'avg_pltv' in details_df.columns:
+        fmt['avg_pltv'] = '{:.1f}'
+    if 'romi_pct' in details_df.columns:
+        fmt['romi_pct'] = '{:.0f}%'
+    if 'net_value_per_user' in details_df.columns:
+        fmt['net_value_per_user'] = '{:.0f}'
+    if 'users' in details_df.columns:
+        fmt['users'] = '{:,}'
+
+    st.dataframe(details_df.style.format(fmt), use_container_width=True)
 
 # ══════════════════════════════════════════════════════════════════════════
 # PAGE: SHAP

@@ -1,0 +1,6 @@
+uplift_segment,users,avg_churn_prob,avg_pltv,total_pltv,avg_error_rate
+Sure Things,89569,0.17,63174.984,5658520169.724,0.028
+Persuadables,97065,0.629,3325.259,322766272.832,0.031
+Lost Causes,125771,0.666,2.236,281186.267,0.041
+Low Value Stable,60875,0.201,1.778,108262.642,0.021
+Sleeping Dogs,24,0.66,550.092,13202.212,0.373
